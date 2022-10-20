@@ -82,7 +82,7 @@ class MentionerPlugin extends Plugin {
 		// Match every instance of #name in the text
 		if ($this->getConfig ()->get ( 'notice-hash' ) && $mentions = $this->getMentions ( $text, '#' )) {
 			// Build a recipient list, each unique name will get checked for Staff-ishness
-			$stafflist = new UserList ();
+			$stafflist = new StaffMailingList ();
 			foreach ( $mentions as $idx => $name ) {
 				$staff = $this->convertName ( $name, TRUE );
 				if ($staff instanceof Staff) {
@@ -108,10 +108,6 @@ class MentionerPlugin extends Plugin {
 	 * @return Staff|null|User
 	 */
 	private function convertName($name, $staff_only = false) {
-	    // Names aren't numbers
-	    if(is_numeric($name))
-	        return null;
-	    
 		// Look for @prefix as prefix@domain.com etc
 		if ($m = $this->matchEmailDomain ( $name )) {
 			if ($m instanceof Staff) {
@@ -166,10 +162,10 @@ class MentionerPlugin extends Plugin {
 		// Figure out if we need to send them.
 		if ($entry->isSystem ()) {
 			// System!
-			// $poster = $entry->getPoster (); // No idea what that returns.
-			// $skip [$ticket->getOwnerId ()] = true; // They don't need system messages.
-			// Actually, does anyone need system messages?
-			return;
+			$poster = $entry->getPoster (); // No idea what that returns.
+			$skip [$ticket->getOwnerId ()] = true; // They don't need system messages.
+				                                       // Actually, does anyone need system messages?
+				                                       // return;
 		} elseif ($entry->getUserId ()) {
 			// A user sent us a message
 			$poster = $entry->getUser ();
@@ -368,7 +364,7 @@ class MentionerPlugin extends Plugin {
 	 * @param UserList $staff
 	 *        	(of Staff objects)
 	 */
-	private function notifyStaffOfMention(ThreadEntry $entry, UserList $recipients) {
+	private function notifyStaffOfMention(ThreadEntry $entry, StaffMailingList $recipients) {
 		// aquire ticket from $entry
 		global $cfg;
 		$ticket = $this->getTicket ( $entry );
@@ -459,7 +455,7 @@ class MentionerPlugin extends Plugin {
 	 *
 	 * @see Plugin::uninstall()
 	 */
-	function uninstall(&$errors) {
+	function uninstall() {
 		$errors = array ();
 		parent::uninstall ( $errors );
 	}
@@ -472,4 +468,81 @@ class MentionerPlugin extends Plugin {
 	}
 }
 
+
+class StaffMailingList extends ListObject
+implements TemplateVariable {
+
+    function add($recipient) {
+        if (!$recipient instanceof Staff)
+            throw new InvalidArgumentException('Staff expected');
+
+        return parent::add($recipient);
+    }
+
+    function addRecipient($contact, $to='to') {
+        return $this->add(new EmailRecipient($contact, $to));
+    }
+
+    function addTo(EmailContact $contact) {
+        return $this->addRecipient($contact, 'to');
+    }
+
+    function addCc(EmailContact $contact) {
+        return $this->addRecipient($contact, 'cc');
+    }
+
+    function addBcc(EmailContact $contact) {
+        return $this->addRecipient($contact, 'bcc');
+    }
+
+    function __toString() {
+        return $this->getNames();
+    }
+
+    // Recipients' email addresses
+    function getEmailAddresses() {
+        $list = array();
+        foreach ($this->storage as $u) {
+            $list[$u->getType()][$u->getId()] = sprintf("%s <%s>",
+                    $u->getName(), $u->getEmail());
+        }
+        return $list;
+    }
+
+    function getNames() {
+        $list = array();
+        foreach($this->storage as $user) {
+            if (is_object($user))
+                $list [] = $user->getName();
+        }
+        return $list ? implode(', ', $list) : '';
+    }
+
+    function getFull() {
+        $list = array();
+        foreach($this->storage as $user) {
+            if (is_object($user))
+                $list[] = sprintf("%s <%s>", $user->getName(), $user->getEmail());
+        }
+
+        return $list ? implode(', ', $list) : '';
+    }
+
+    function getEmails() {
+        $list = array();
+        foreach($this->storage as $user) {
+            if (is_object($user))
+                $list[] = $user->getEmail();
+        }
+        return $list ? implode(', ', $list) : '';
+    }
+
+    static function getVarScope() {
+        return array(
+            'names' => __('List of names'),
+            'emails' => __('List of email addresses'),
+            'full' => __('List of names and email addresses'),
+        );
+    }
+}
 
